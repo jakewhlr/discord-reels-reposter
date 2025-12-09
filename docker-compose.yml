@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  discord-reels-reposter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: discord-reels-reposter
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Mount temp_downloads as a volume (optional, for persistence)
+      - ./temp_downloads:/app/temp_downloads
+    # Resource limits (optional, adjust as needed)
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
