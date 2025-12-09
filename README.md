@@ -95,3 +95,9 @@ Edit `config.py`:
 - Video may be private or deleted
 - Platform may be rate-limiting requests
 
+---
+
+## Credits
+
+Created with [OpenCode](https://opencode.ai) + Claude Sonnet 4.5
+
