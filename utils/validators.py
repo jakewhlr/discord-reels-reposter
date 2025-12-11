@@ -39,6 +39,22 @@ def is_tiktok_url(url: str) -> bool:
     return False
 
 
+def is_youtube_url(url: str) -> bool:
+    """
+    Check if a URL is a YouTube Shorts or video URL.
+    
+    Args:
+        url: The URL to check
+        
+    Returns:
+        True if the URL matches YouTube patterns, False otherwise
+    """
+    for pattern in config.YOUTUBE_PATTERNS:
+        if pattern.match(url):
+            return True
+    return False
+
+
 def is_supported_url(url: str) -> Tuple[bool, str]:
     """
     Check if a URL is from a supported platform.
@@ -53,6 +69,8 @@ def is_supported_url(url: str) -> Tuple[bool, str]:
         return True, "Instagram"
     elif is_tiktok_url(url):
         return True, "TikTok"
+    elif is_youtube_url(url):
+        return True, "YouTube"
     return False, ""
 
 
