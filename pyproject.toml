@@ -2,13 +2,22 @@
 name = "discord-reels-reposter"
 version = "0.1.0"
 description = "Discord bot that re-embeds Instagram Reels and TikTok videos as native videos"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "discord.py>=2.3.0",
-    "yt-dlp>=2023.10.0",
+    # curl-cffi provides TLS/JA3 impersonation, which Instagram and Facebook
+    # require -- without it Instagram returns "login required". The deployed
+    # image installs this with --pre (nightly); extractors for these sites
+    # break often, so keeping it current matters more than usual.
+    "yt-dlp[default,curl-cffi]>=2025.12.0",
     "python-dotenv>=1.0.0",
     "aiofiles>=23.0.0",
     "ffmpeg-python>=0.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
 ]
 
 [project.scripts]
