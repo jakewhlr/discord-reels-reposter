@@ -115,23 +115,47 @@ about its contents, so the bot has to try before it can know.
 
 Platform patterns, colours and download options live in `config.py`:
 
-- `MAX_FILE_SIZE` — Size limit (default: 8MB, increase for boosted servers)
 - `ENABLE_COMPRESSION` — Auto-compress oversized videos (default: True)
-- `MAX_COMPRESSION_ATTEMPTS` — Compression retries (default: 3)
+- `MAX_COMPRESSION_ATTEMPTS` — Maximum encodes per video (default: 3; normally only 1 runs)
 - `PLATFORM_PATTERNS` — URL patterns per platform; add a platform by adding an entry
 - `PLATFORM_COLORS` — Embed accent colour per platform
+
+The upload limit is **not** configured: it's read per message from
+`Guild.filesize_limit`, which follows the server's boost tier (10 MiB at
+tier 0/1, 50 MiB at tier 2, 100 MiB at tier 3). So the same bot gives a boosted
+server full-quality reposts and only re-encodes on servers that need it.
 
 Environment variables (`.env`):
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `DISCORD_BOT_TOKEN` | — | Required |
+| `MAX_FILE_SIZE_MB` | `0` | Cap uploads *below* the server's real limit; `0` = use the guild limit |
 | `MAX_DURATION_SECONDS` | `900` | Skip videos longer than this; `0` disables |
+| `MAX_CONCURRENT_JOBS` | `2` | How many downloads/encodes may run at once |
 | `ENABLE_EMBEDS` | `true` | Attach the caption/author/stats embed |
 | `ENABLE_EMBED_THUMBNAIL` | `false` | Add the poster frame as an embed thumbnail (duplicates the attached video) |
 | `EMBED_DESCRIPTION_LIMIT` | `400` | Caption truncation length |
 | `YTDL_COOKIES_FILE` | — | Path to a `cookies.txt`; enables Reddit and login-gated posts |
 | `YTDL_COOKIES_FROM_BROWSER` | — | Alternative: `firefox`, `chrome:Default`, … |
+
+### How compression sizing works
+
+File size is bitrate x duration, so the bitrate needed to hit a target size is
+arithmetic rather than guesswork:
+
+```
+total_bitrate = (target_bytes * 8 * 0.97) / duration
+video_bitrate = total_bitrate - audio_bitrate
+```
+
+The bitrate target only applies in **ABR** mode, though. Passing both `-b:v`
+and `-crf` to libx264 makes it honour the CRF and ignore the bitrate, so the
+size budget has no effect — which is why a CRF-based encoder needs repeated
+escalating attempts and still overshoots. This encodes once in ABR mode with
+`-maxrate`/`-bufsize`, lands at 97-99% of target, and only re-encodes if that
+measurably missed. Targets that no bitrate can satisfy are declined up front
+instead of burning CPU.
 
 ### Enabling Reddit
 

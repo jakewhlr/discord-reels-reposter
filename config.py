@@ -4,8 +4,29 @@ import os
 import re
 import logging
 
-# File size limit (8MB for non-boosted servers)
-MAX_FILE_SIZE = 8 * 1024 * 1024  # 8MB in bytes
+# ---------------------------------------------------------------------------
+# Upload size limit
+#
+# Discord's attachment limit depends on the guild's boost tier (10 MiB at
+# tier 0/1, 50 MiB at tier 2, 100 MiB at tier 3), so it is resolved per
+# message from Guild.filesize_limit -- see utils/limits.py. These settings
+# only shape that resolution.
+# ---------------------------------------------------------------------------
+
+# Hard override in MB. 0 (default) means "use the guild's real limit".
+# Set this to cap uploads below what the server would actually allow.
+MAX_FILE_SIZE_OVERRIDE = int(os.getenv("MAX_FILE_SIZE_MB", "0")) * 1024 * 1024
+
+# Used when there is no guild context or discord.py reports nothing useful.
+MAX_FILE_SIZE_FALLBACK = 8 * 1024 * 1024  # 8MB
+
+# The limit covers the whole multipart request, not just the video, so leave
+# room for the embed JSON and boundaries.
+UPLOAD_SIZE_HEADROOM = 256 * 1024  # 256KB
+
+# Backwards compatibility: anything still reading config.MAX_FILE_SIZE gets
+# the conservative fallback rather than a wrong per-guild answer.
+MAX_FILE_SIZE = MAX_FILE_SIZE_OVERRIDE or MAX_FILE_SIZE_FALLBACK
 
 # Temporary download directory
 TEMP_DIR = "./temp_downloads"

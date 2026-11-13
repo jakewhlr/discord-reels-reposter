@@ -23,12 +23,19 @@ BLOCK_SECONDS = 0.4
 MAX_ACCEPTABLE_STALL = 0.2
 
 
+class FakeGuild:
+    """Stand-in for discord.Guild; 50 MiB = boost tier 2."""
+
+    filesize_limit = 50 * 1024 * 1024
+
+
 class FakeMessage:
     """Minimal stand-in for discord.Message."""
 
     def __init__(self):
         self.replies = []
         self.reactions = []
+        self.guild = FakeGuild()
 
     async def add_reaction(self, emoji):
         self.reactions.append(emoji)
@@ -104,8 +111,13 @@ def test_download_runs_off_the_event_loop(monkeypatch):
 
 def test_compression_runs_off_the_event_loop(monkeypatch, tmp_path):
     """Compression is the longest blocking call and must also be offloaded."""
+    import config
+
+    # Force a small ceiling so the fake video counts as oversized
+    monkeypatch.setattr(config, "MAX_FILE_SIZE_OVERRIDE", 1024 * 1024)
+
     fake_video = tmp_path / "video.mp4"
-    fake_video.write_bytes(b"0" * (config_max_size() + 1))  # oversized -> compresses
+    fake_video.write_bytes(b"0" * (2 * 1024 * 1024))  # oversized -> compresses
 
     monkeypatch.setattr(
         vh,
@@ -119,7 +131,10 @@ def test_compression_runs_off_the_event_loop(monkeypatch, tmp_path):
         },
     )
 
+    compress_called = []
+
     def slow_blocking_compress(path, target, attempts):
+        compress_called.append(target)
         time.sleep(BLOCK_SECONDS)  # exactly what ffmpeg.run does
         return None  # compression failed -> handler replies and bails
 
@@ -133,16 +148,47 @@ def test_compression_runs_off_the_event_loop(monkeypatch, tmp_path):
         )
 
     worst = asyncio.run(main())
+    assert compress_called, "compression should have been attempted"
     assert worst < MAX_ACCEPTABLE_STALL, (
         f"event loop blocked for {worst:.2f}s during compression; "
         "compress_video must be awaited via asyncio.to_thread"
     )
 
 
-def config_max_size():
+def test_compression_target_is_the_guild_limit(monkeypatch, tmp_path):
+    """Compression must aim at this server's real ceiling, not a constant."""
     import config
 
-    return config.MAX_FILE_SIZE
+    monkeypatch.setattr(config, "MAX_FILE_SIZE_OVERRIDE", 0)
+
+    fake_video = tmp_path / "video.mp4"
+    fake_video.write_bytes(b"0" * 1024)
+
+    monkeypatch.setattr(
+        vh,
+        "download_video",
+        lambda url: {
+            'filepath': str(fake_video),
+            'filesize': 60 * 1024 * 1024,  # over a tier-2 50MiB limit
+            'title': 'clip',
+            'duration': 10,
+            'metadata': {},
+        },
+    )
+
+    targets = []
+    monkeypatch.setattr(
+        vh, "compress_video", lambda path, target, attempts: targets.append(target) or None
+    )
+
+    async def main():
+        handler = VideoHandler(FakeBot())
+        await handler.process_video_url(FakeMessage(), "https://x.com/a/status/1", "X")
+
+    asyncio.run(main())
+    assert targets, "compression should have been attempted"
+    # FakeGuild reports 50 MiB; the target must be near that, not the 8MB default
+    assert targets[0] > 45 * 1024 * 1024, f"compressed toward {targets[0]} bytes"
 
 
 def test_concurrent_jobs_are_bounded(monkeypatch):

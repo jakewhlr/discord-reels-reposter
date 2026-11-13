@@ -8,6 +8,7 @@ from discord.ext import commands
 from utils.validators import extract_video_urls
 from utils.downloader import download_video, cleanup_file, sanitize_filename
 from utils.embeds import build_video_embed
+from utils.limits import resolve_upload_limit
 from utils.compressor import compress_video
 import config
 
@@ -123,10 +124,19 @@ class VideoHandler(commands.Cog):
         title = video_info['title']
         metadata = video_info.get('metadata') or {}
         
+        # This server's real ceiling, which depends on its boost tier. A
+        # boosted guild takes 50-100MiB, so most reels need no re-encoding
+        # at all -- and re-encoding is what used to hang the bot.
+        size_limit = resolve_upload_limit(message.guild)
+        
         # Check file size and compress if needed
-        if filesize > config.MAX_FILE_SIZE:
+        if filesize > size_limit:
             if config.ENABLE_COMPRESSION:
-                logger.info(f"Video exceeds size limit ({filesize / 1024 / 1024:.2f}MB), attempting compression...")
+                logger.info(
+                    f"Video exceeds this server's limit "
+                    f"({filesize / 1024 / 1024:.2f}MB > {size_limit / 1024 / 1024:.0f}MB), "
+                    "attempting compression..."
+                )
                 
                 # Update reaction to show compression is happening
                 try:
@@ -137,7 +147,7 @@ class VideoHandler(commands.Cog):
                 # Attempt to compress the video. ffmpeg is the worst offender
                 # for blocking -- a 30MB clip takes tens of seconds.
                 compressed_path = await asyncio.to_thread(
-                    compress_video, filepath, config.MAX_FILE_SIZE, config.MAX_COMPRESSION_ATTEMPTS
+                    compress_video, filepath, size_limit, config.MAX_COMPRESSION_ATTEMPTS
                 )
                 
                 if compressed_path:
@@ -149,12 +159,12 @@ class VideoHandler(commands.Cog):
                 else:
                     # Compression failed
                     logger.warning("Compression failed, video still too large")
-                    await self.handle_compression_failed(message, filesize)
+                    await self.handle_compression_failed(message, filesize, size_limit)
                     cleanup_file(filepath)
                     return
             else:
                 # Compression disabled, reject the file
-                await self.handle_file_too_large(message, filesize)
+                await self.handle_file_too_large(message, filesize, size_limit)
                 cleanup_file(filepath)
                 return
         
@@ -294,19 +304,20 @@ class VideoHandler(commands.Cog):
             pass
         logger.warning(f"Video too long: {duration}s > {config.MAX_DURATION_SECONDS}s")
     
-    async def handle_file_too_large(self, message: discord.Message, filesize: int):
+    async def handle_file_too_large(self, message: discord.Message, filesize: int, size_limit: int):
         """
-        Handle a file that exceeds the size limit.
+        Handle a file that exceeds this server's size limit.
         
         Args:
             message: The original Discord message
             filesize: The size of the file in bytes
+            size_limit: This guild's upload ceiling in bytes
         """
         size_mb = filesize / 1024 / 1024
-        limit_mb = config.MAX_FILE_SIZE / 1024 / 1024
+        limit_mb = size_limit / 1024 / 1024
         
         await message.reply(
-            f"Video is too large to upload ({size_mb:.2f}MB exceeds {limit_mb:.0f}MB limit)."
+            f"Video is too large to upload ({size_mb:.2f}MB exceeds this server's {limit_mb:.0f}MB limit)."
         )
         try:
             await message.add_reaction("❌")
@@ -314,20 +325,21 @@ class VideoHandler(commands.Cog):
             pass
         logger.warning(f"Video exceeds size limit: {size_mb:.2f}MB > {limit_mb:.0f}MB")
     
-    async def handle_compression_failed(self, message: discord.Message, filesize: int):
+    async def handle_compression_failed(self, message: discord.Message, filesize: int, size_limit: int):
         """
         Handle a file that could not be compressed enough.
         
         Args:
             message: The original Discord message
             filesize: The original size of the file in bytes
+            size_limit: This guild's upload ceiling in bytes
         """
         size_mb = filesize / 1024 / 1024
-        limit_mb = config.MAX_FILE_SIZE / 1024 / 1024
+        limit_mb = size_limit / 1024 / 1024
         
         await message.reply(
-            f"Video is too large ({size_mb:.2f}MB) and could not be compressed enough to fit the {limit_mb:.0f}MB limit. "
-            f"Try posting a shorter video or lowering the quality."
+            f"Video is too large ({size_mb:.2f}MB) and could not be compressed enough to fit this "
+            f"server's {limit_mb:.0f}MB limit. Try posting a shorter video or lowering the quality."
         )
         try:
             await message.add_reaction("❌")
