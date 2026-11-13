@@ -4,6 +4,7 @@ FROM python:3.11-slim
 # Install system dependencies (ffmpeg for video compression)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    git \ 
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -20,7 +21,7 @@ COPY utils/ ./utils/
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir \
     discord.py>=2.3.0 \
-    yt-dlp>=2023.10.0 \
+    --pre "yt-dlp[default,curl-cffi]" \
     python-dotenv>=1.0.0 \
     aiofiles>=23.0.0 \
     ffmpeg-python>=0.2.0
