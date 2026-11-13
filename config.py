@@ -165,6 +165,11 @@ elif COOKIES_FROM_BROWSER:
 ENABLE_COMPRESSION = True  # Automatically compress videos that exceed MAX_FILE_SIZE
 MAX_COMPRESSION_ATTEMPTS = 3  # Number of compression attempts with different settings
 
+# How many downloads/compressions may run at once. yt-dlp and ffmpeg are
+# blocking and run in worker threads; the container is capped at 1 CPU, so
+# letting many ffmpeg jobs run together just makes them all slower.
+MAX_CONCURRENT_JOBS = int(os.getenv("MAX_CONCURRENT_JOBS", "2"))
+
 # ---------------------------------------------------------------------------
 # Embed settings
 #

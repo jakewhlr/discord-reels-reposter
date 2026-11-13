@@ -1,5 +1,6 @@
 """Discord cog for handling video URL messages."""
 
+import asyncio
 import logging
 import os
 import discord
@@ -18,7 +19,15 @@ class VideoHandler(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
-        logger.info("VideoHandler cog initialized")
+        # yt-dlp and ffmpeg are both CPU/IO-bound blocking calls. They run in
+        # worker threads (see process_video_url) so the gateway heartbeat keeps
+        # firing, and this semaphore bounds how many run at once -- the
+        # container is capped at 1 CPU, so unbounded ffmpeg jobs would starve
+        # each other and the bot.
+        self.jobs = asyncio.Semaphore(max(1, config.MAX_CONCURRENT_JOBS))
+        logger.info(
+            f"VideoHandler cog initialized (max {config.MAX_CONCURRENT_JOBS} concurrent job(s))"
+        )
     
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -53,10 +62,25 @@ class VideoHandler(commands.Cog):
         """
         Download and re-embed a video from a URL.
         
+        Serialised through self.jobs so concurrent posts don't pile up
+        simultaneous ffmpeg runs on a one-CPU container.
+        
         Args:
             message: The original Discord message
             url: The video URL to process
             platform: The platform name (Instagram, TikTok, etc.)
+        """
+        async with self.jobs:
+            await self._process_video_url(message, url, platform)
+    
+    async def _process_video_url(self, message: discord.Message, url: str, platform: str = "Unknown"):
+        """
+        Do the actual download/compress/upload for one URL.
+        
+        Args:
+            message: The original Discord message
+            url: The video URL to process
+            platform: The platform name
         """
         # Add "downloading" reaction
         try:
@@ -64,8 +88,10 @@ class VideoHandler(commands.Cog):
         except discord.errors.Forbidden:
             logger.warning("Missing permission to add reactions")
         
-        # Download the video
-        video_info = download_video(url)
+        # Download the video. yt-dlp is blocking, so it runs off the event
+        # loop -- otherwise the gateway heartbeat stalls for the whole
+        # download and Discord eventually drops the shard.
+        video_info = await asyncio.to_thread(download_video, url)
         
         # If download failed outright
         if video_info is None:
@@ -108,8 +134,11 @@ class VideoHandler(commands.Cog):
                 except discord.errors.Forbidden:
                     pass
                 
-                # Attempt to compress the video
-                compressed_path = compress_video(filepath, config.MAX_FILE_SIZE, config.MAX_COMPRESSION_ATTEMPTS)
+                # Attempt to compress the video. ffmpeg is the worst offender
+                # for blocking -- a 30MB clip takes tens of seconds.
+                compressed_path = await asyncio.to_thread(
+                    compress_video, filepath, config.MAX_FILE_SIZE, config.MAX_COMPRESSION_ATTEMPTS
+                )
                 
                 if compressed_path:
                     # Compression successful, use compressed file
