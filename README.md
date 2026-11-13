@@ -45,10 +45,10 @@ cp .env.example .env
 # Edit .env and add your Discord bot token
 
 # 2. Start the bot
-docker-compose up -d
+docker compose up -d
 
 # 3. View logs
-docker-compose logs -f
+docker compose logs -f
 ```
 
 ## Local Development
@@ -153,7 +153,7 @@ Treat that file as a credential — it grants access to the account.
 
 **Bot doesn't respond:**
 - Enable Message Content Intent in Discord Developer Portal
-- Check logs: `docker-compose logs -f` or console output
+- Check logs: `docker compose logs -f` or console output
 
 **Videos too large:**
 - Compression is enabled by default
@@ -161,7 +161,7 @@ Treat that file as a credential — it grants access to the account.
 
 **Download fails / "login required":**
 - Video may be private or deleted
-- Rebuild to pick up a newer yt-dlp: `docker-compose build --no-cache && docker-compose up -d`
+- Rebuild to pick up a newer yt-dlp: `docker compose build --no-cache && docker compose up -d`
 - Supply cookies via `YTDL_COOKIES_FILE` for login-gated posts
 
 **Video has no audio:**
